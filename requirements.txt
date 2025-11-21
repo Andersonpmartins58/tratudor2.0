@@ -1,0 +1,7 @@
+mss
+pytesseract
+deep-translator
+pystray
+Pillow
+keyboard
+screeninfo
