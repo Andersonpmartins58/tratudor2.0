@@ -89,65 +89,69 @@ class SelectionOverlay:
 from PIL import Image, ImageTk, ImageFilter
 
 class ResultWindow:
-    def __init__(self, master, original_text, translated_text, img, x, y, w, h):
+    def __init__(self, master, original_text, translated_text, img, x, y, w, h, on_close=None):
+        self.on_close = on_close
         self.root = tk.Toplevel(master)
         self.root.title("Tradução")
         self.root.attributes('-topmost', True)
         self.root.overrideredirect(True) # Sem bordas
         
-        # Posicionar exatamente sobre a área selecionada
         self.root.geometry(f"{w}x{h}+{x}+{y}")
         self.root.configure(bg='black')
         
-        # Preparar imagem de fundo (Blur)
-        if img:
-            # Aplicar blur para esconder o texto original mas manter as cores
-            blurred_img = img.filter(ImageFilter.GaussianBlur(radius=15))
-            self.photo = ImageTk.PhotoImage(blurred_img)
-        else:
-            self.photo = None
-
-        # Canvas para desenhar imagem e texto
+        self.w = w
+        self.h = h
+        
+        # Canvas
         self.canvas = tk.Canvas(self.root, width=w, height=h, highlightthickness=0, bg='black')
         self.canvas.pack(fill='both', expand=True)
         
-        # Desenhar imagem de fundo
-        if self.photo:
-            self.canvas.create_image(0, 0, image=self.photo, anchor='nw')
+        # Inicializar conteúdo
+        self.bg_image_id = self.canvas.create_image(0, 0, anchor='nw')
+        self.dark_overlay_id = self.canvas.create_image(0, 0, anchor='nw')
         
-        # Adicionar um retângulo semi-transparente escuro para melhorar contraste
-        # Como Tkinter Canvas não suporta alpha em retângulos nativamente de forma fácil,
-        # vamos criar uma imagem semi-transparente preta do tamanho da janela.
-        self.dark_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 160)) # 160/255 opacidade
+        # Criar overlay escuro uma vez
+        self.dark_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 160))
         self.dark_photo = ImageTk.PhotoImage(self.dark_overlay)
-        self.canvas.create_image(0, 0, image=self.dark_photo, anchor='nw')
-        
-        # Desenhar Texto Traduzido
-        # Usar sombra preta para legibilidade em qualquer fundo
+        self.canvas.itemconfig(self.dark_overlay_id, image=self.dark_photo)
+
         font_spec = (Config.FONT_FAMILY, Config.FONT_SIZE, 'bold')
-        
-        # Ajustar alinhamento para esquerda (nw) para manter formatação de listas
         padding_x = 10
         padding_y = 10
         
-        # Sombra
-        self.canvas.create_text(padding_x + 1, padding_y + 1, text=translated_text, font=font_spec, fill="black", width=w-(padding_x*2), justify='left', anchor='nw')
-        # Texto Principal
-        self.canvas.create_text(padding_x, padding_y, text=translated_text, font=font_spec, fill="white", width=w-(padding_x*2), justify='left', anchor='nw')
+        # Textos (Sombra e Principal)
+        self.text_shadow_id = self.canvas.create_text(padding_x + 1, padding_y + 1, text="", font=font_spec, fill="black", width=w-(padding_x*2), justify='left', anchor='nw')
+        self.text_main_id = self.canvas.create_text(padding_x, padding_y, text="", font=font_spec, fill="white", width=w-(padding_x*2), justify='left', anchor='nw')
 
-        # Botão de fechar (desenhado no canvas)
+        # Botão de fechar
         close_btn = self.canvas.create_text(w-15, 15, text="×", fill="#ff5555", font=("Arial", 16, "bold"))
-        self.canvas.tag_bind(close_btn, "<Button-1>", lambda e: self.root.destroy())
+        self.canvas.tag_bind(close_btn, "<Button-1>", lambda e: self.destroy())
         
-        # Fechar com ESC
-        self.root.bind("<Escape>", lambda e: self.root.destroy())
-        
-        # Permitir arrastar a janela
+        self.root.bind("<Escape>", lambda e: self.destroy())
         self.canvas.bind("<ButtonPress-1>", self.start_move)
         self.canvas.bind("<B1-Motion>", self.do_move)
         
         self.x = 0
         self.y = 0
+        
+        # Definir conteúdo inicial
+        self.update_content(translated_text, img)
+
+    def update_content(self, translated_text, img):
+        # Atualizar imagem de fundo
+        if img:
+            blurred_img = img.filter(ImageFilter.GaussianBlur(radius=15))
+            self.photo = ImageTk.PhotoImage(blurred_img)
+            self.canvas.itemconfig(self.bg_image_id, image=self.photo)
+        
+        # Atualizar texto
+        self.canvas.itemconfig(self.text_shadow_id, text=translated_text)
+        self.canvas.itemconfig(self.text_main_id, text=translated_text)
+
+    def destroy(self):
+        if self.on_close:
+            self.on_close()
+        self.root.destroy()
 
     def start_move(self, event):
         self.x = event.x

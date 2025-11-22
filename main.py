@@ -15,6 +15,7 @@ class ScreenTranslatorApp:
         self.translator_service = TranslatorService()
         self.icon = None
         self.is_running = True
+        self.result_window = None
         
         # Inicializar Tkinter na thread principal
         self.root = tk.Tk()
@@ -40,6 +41,7 @@ class ScreenTranslatorApp:
 
     def quit_app(self):
         self.is_running = False
+        self.translator_service.stop_continuous_translation()
         if self.icon:
             self.icon.stop()
         
@@ -64,9 +66,17 @@ class ScreenTranslatorApp:
 
     def handle_selection_result(self, x, y, w, h):
         print(f"Selecionado: {x},{y} {w}x{h}")
-        # Chamar serviço de tradução (já roda em thread separada)
+        
+        # Se já houver uma janela aberta, fechar e parar serviço anterior
+        if self.result_window:
+            self.result_window.destroy()
+            self.result_window = None
+        
+        self.translator_service.stop_continuous_translation()
+
+        # Iniciar serviço de tradução contínua
         # Passamos as coordenadas para usar no overlay depois
-        self.translator_service.capture_and_translate(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
+        self.translator_service.start_continuous_translation(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
 
     def show_result(self, original, translated, img, x, y, w, h):
         # O callback vem de outra thread, então agendamos na main thread
@@ -74,9 +84,19 @@ class ScreenTranslatorApp:
 
     def _show_result_window(self, original, translated, img, x, y, w, h):
         try:
-            ResultWindow(self.root, original, translated, img, x, y, w, h)
+            if self.result_window:
+                # Atualizar existente
+                self.result_window.update_content(translated, img)
+            else:
+                # Criar nova
+                self.result_window = ResultWindow(self.root, original, translated, img, x, y, w, h, on_close=self.on_window_close)
         except Exception as e:
             print(f"Erro ao mostrar resultado: {e}")
+
+    def on_window_close(self):
+        print("Janela fechada, parando tradução.")
+        self.translator_service.stop_continuous_translation()
+        self.result_window = None
 
     def setup_hotkey(self):
         # keyboard roda em thread própria, então trigger_selection já lida com isso via after()
