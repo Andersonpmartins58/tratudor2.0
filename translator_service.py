@@ -42,13 +42,13 @@ class TranslatorService:
             text = text.strip()
 
             if not text:
-                callback("Sem texto detectado", "Nenhum texto foi encontrado na área selecionada.")
+                callback("Sem texto detectado", "Nenhum texto foi encontrado na área selecionada.", img)
                 return
 
             # Tradução
             translated = self.translator.translate(text)
             
-            callback(text, translated)
+            callback(text, translated, img)
 
         except Exception as e:
-            callback("Erro", f"Ocorreu um erro: {str(e)}")
+            callback("Erro", f"Ocorreu um erro: {str(e)}", None)

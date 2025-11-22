@@ -65,15 +65,16 @@ class ScreenTranslatorApp:
     def handle_selection_result(self, x, y, w, h):
         print(f"Selecionado: {x},{y} {w}x{h}")
         # Chamar serviço de tradução (já roda em thread separada)
-        self.translator_service.capture_and_translate(x, y, w, h, self.show_result)
+        # Passamos as coordenadas para usar no overlay depois
+        self.translator_service.capture_and_translate(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
 
-    def show_result(self, original, translated):
+    def show_result(self, original, translated, img, x, y, w, h):
         # O callback vem de outra thread, então agendamos na main thread
-        self.root.after(0, lambda: self._show_result_window(original, translated))
+        self.root.after(0, lambda: self._show_result_window(original, translated, img, x, y, w, h))
 
-    def _show_result_window(self, original, translated):
+    def _show_result_window(self, original, translated, img, x, y, w, h):
         try:
-            ResultWindow(self.root, original, translated)
+            ResultWindow(self.root, original, translated, img, x, y, w, h)
         except Exception as e:
             print(f"Erro ao mostrar resultado: {e}")
 
