@@ -1,6 +1,11 @@
 import time
-
-# ... (imports remain the same)
+import mss
+import pytesseract
+from PIL import Image
+from deep_translator import GoogleTranslator
+import threading
+from config import Config
+import os
 
 class TranslatorService:
     def __init__(self):

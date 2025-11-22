@@ -67,16 +67,17 @@ class ScreenTranslatorApp:
     def handle_selection_result(self, x, y, w, h):
         print(f"Selecionado: {x},{y} {w}x{h}")
         
-        # Se já houver uma janela aberta, fechar e parar serviço anterior
+        # Se já houver uma janela aberta, fechar
         if self.result_window:
             self.result_window.destroy()
             self.result_window = None
         
+        # Parar qualquer serviço contínuo (por segurança)
         self.translator_service.stop_continuous_translation()
 
-        # Iniciar serviço de tradução contínua
-        # Passamos as coordenadas para usar no overlay depois
-        self.translator_service.start_continuous_translation(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
+        # Iniciar serviço de tradução (Captura Única / Snapshot)
+        # Isso evita o bug de feedback loop, pois captura a tela limpa uma vez e mostra o resultado estático
+        self.translator_service.capture_and_translate(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
 
     def show_result(self, original, translated, img, x, y, w, h):
         # O callback vem de outra thread, então agendamos na main thread
