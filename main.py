@@ -76,21 +76,21 @@ class ScreenTranslatorApp:
         self.translator_service.stop_continuous_translation()
 
         # Iniciar serviço de tradução (Captura Única / Snapshot)
-        # Isso evita o bug de feedback loop, pois captura a tela limpa uma vez e mostra o resultado estático
-        self.translator_service.capture_and_translate(x, y, w, h, lambda orig, trans, img: self.show_result(orig, trans, img, x, y, w, h))
+        # Callback agora recebe (text_blocks, None, img)
+        self.translator_service.capture_and_translate(x, y, w, h, lambda blocks, _, img: self.show_result(blocks, img, x, y, w, h))
 
-    def show_result(self, original, translated, img, x, y, w, h):
+    def show_result(self, text_blocks, img, x, y, w, h):
         # O callback vem de outra thread, então agendamos na main thread
-        self.root.after(0, lambda: self._show_result_window(original, translated, img, x, y, w, h))
+        self.root.after(0, lambda: self._show_result_window(text_blocks, img, x, y, w, h))
 
-    def _show_result_window(self, original, translated, img, x, y, w, h):
+    def _show_result_window(self, text_blocks, img, x, y, w, h):
         try:
             if self.result_window:
-                # Atualizar existente
-                self.result_window.update_content(translated, img)
+                # Atualizar existente (embora estejamos destruindo antes, mantemos lógica robusta)
+                self.result_window.update_content(text_blocks, img)
             else:
                 # Criar nova
-                self.result_window = ResultWindow(self.root, original, translated, img, x, y, w, h, on_close=self.on_window_close)
+                self.result_window = ResultWindow(self.root, text_blocks, img, x, y, w, h, on_close=self.on_window_close)
         except Exception as e:
             print(f"Erro ao mostrar resultado: {e}")
 

@@ -44,62 +44,104 @@ class TranslatorService:
             self._current_thread = None
 
     def _worker(self, x, y, width, height, callback):
-        # ... (mantido igual, mas pode ser refatorado para usar lógica comum se quiser)
         try:
             with mss.mss() as sct:
                 monitor = {"top": y, "left": x, "width": width, "height": height}
                 sct_img = sct.grab(monitor)
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
-            text = pytesseract.image_to_string(img).strip()
-            if not text:
-                callback("Sem texto", "...", img)
+            # Usar image_to_data para obter coordenadas de cada palavra
+            # output_type='dict' retorna um dicionário com listas
+            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            
+            lines = {}
+            
+            # Agrupar palavras em linhas
+            n_boxes = len(data['text'])
+            for i in range(n_boxes):
+                if int(data['conf'][i]) > 0: # Filtrar confiança baixa/espaços vazios
+                    text = data['text'][i].strip()
+                    if not text:
+                        continue
+                        
+                    # Chave única para a linha: block_page_par_line
+                    key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+                    
+                    if key not in lines:
+                        lines[key] = {
+                            'text': [],
+                            'left': data['left'][i],
+                            'top': data['top'][i],
+                            'right': data['left'][i] + data['width'][i],
+                            'bottom': data['top'][i] + data['height'][i]
+                        }
+                    else:
+                        # Atualizar limites da caixa da linha
+                        l = lines[key]
+                        l['text'].append(text)
+                        l['left'] = min(l['left'], data['left'][i])
+                        l['top'] = min(l['top'], data['top'][i])
+                        l['right'] = max(l['right'], data['left'][i] + data['width'][i])
+                        l['bottom'] = max(l['bottom'], data['top'][i] + data['height'][i])
+            
+            if not lines:
+                callback([], [], img)
                 return
 
-            translated = self.translator.translate(text)
-            callback(text, translated, img)
-
-        except Exception as e:
-            callback("Erro", str(e), None)
-
-    def _continuous_worker(self, x, y, width, height, callback, interval):
-        last_text = None
-        
-        try:
-            # Criar instância do mss para esta thread
-            with mss.mss() as sct:
-                monitor = {"top": y, "left": x, "width": width, "height": height}
+            # Preparar texto para tradução em lote
+            sorted_keys = sorted(lines.keys())
+            text_blocks = []
+            raw_texts = []
+            
+            for key in sorted_keys:
+                line_data = lines[key]
+                full_text = " ".join(line_data['text']) # Juntar palavras da linha
+                raw_texts.append(full_text)
                 
-                while not self._stop_event.is_set():
-                    start_time = time.time()
-                    
-                    # 1. Captura
-                    sct_img = sct.grab(monitor)
-                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                    
-                    # 2. OCR
-                    text = pytesseract.image_to_string(img).strip()
-                    
-                    # 3. Verificar mudança
-                    if text and text != last_text:
-                        # 4. Traduzir
-                        try:
-                            translated = self.translator.translate(text)
-                            last_text = text
-                            callback(text, translated, img)
-                        except Exception as e:
-                            print(f"Erro na tradução: {e}")
-                    elif not text:
-                         # Se não tem texto, talvez limpar ou manter o último?
-                         # Vamos manter o último por enquanto ou passar vazio se mudou de texto para vazio
-                         if last_text:
-                             last_text = None
-                             # callback("", "", img) # Opcional: limpar tela
-                    
-                    # 5. Esperar pelo intervalo descontando o tempo de processamento
-                    elapsed = time.time() - start_time
-                    sleep_time = max(0.1, interval - elapsed)
-                    time.sleep(sleep_time)
-                    
+                # Calcular largura e altura final da linha
+                w_line = line_data['right'] - line_data['left']
+                h_line = line_data['bottom'] - line_data['top']
+                
+                text_blocks.append({
+                    'original': full_text,
+                    'x': line_data['left'],
+                    'y': line_data['top'],
+                    'w': w_line,
+                    'h': h_line
+                })
+
+            # Traduzir tudo de uma vez (juntando com quebra de linha)
+            # Isso economiza chamadas de API e geralmente mantém a estrutura
+            full_payload = "\n".join(raw_texts)
+            translated_payload = self.translator.translate(full_payload)
+            
+            if translated_payload:
+                translated_lines = translated_payload.split('\n')
+                
+                # Atribuir traduções de volta aos blocos
+                # Nota: O tradutor pode mudar o número de linhas, então precisamos ser cuidadosos.
+                # Se o número bater, ótimo. Se não, tentamos mapear ou fallback.
+                
+                if len(translated_lines) == len(text_blocks):
+                    for i, block in enumerate(text_blocks):
+                        block['translated'] = translated_lines[i]
+                else:
+                    # Fallback simples se as linhas não baterem (raro com Google Translate em textos curtos)
+                    # Vamos tentar distribuir ou apenas usar o texto original se der erro
+                    print("Aviso: Número de linhas traduzidas difere do original.")
+                    # Tentar mapear pelo índice até onde der
+                    for i, block in enumerate(text_blocks):
+                        if i < len(translated_lines):
+                            block['translated'] = translated_lines[i]
+                        else:
+                            block['translated'] = block['original'] # Fallback
+            else:
+                # Se falhar a tradução, usa o original
+                for block in text_blocks:
+                    block['translated'] = block['original']
+
+            callback(text_blocks, None, img) # Passamos os blocos estruturados
+
         except Exception as e:
-            print(f"Erro no loop contínuo: {e}")
+            print(f"Erro no worker: {e}")
+            callback([], None, None)

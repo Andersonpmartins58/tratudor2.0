@@ -89,7 +89,7 @@ class SelectionOverlay:
 from PIL import Image, ImageTk, ImageFilter
 
 class ResultWindow:
-    def __init__(self, master, original_text, translated_text, img, x, y, w, h, on_close=None):
+    def __init__(self, master, text_blocks, img, x, y, w, h, on_close=None):
         self.on_close = on_close
         self.root = tk.Toplevel(master)
         self.root.title("Tradução")
@@ -106,22 +106,15 @@ class ResultWindow:
         self.canvas = tk.Canvas(self.root, width=w, height=h, highlightthickness=0, bg='black')
         self.canvas.pack(fill='both', expand=True)
         
-        # Inicializar conteúdo
+        # Imagem de fundo (Original, sem blur, pois vamos cobrir apenas o texto)
         self.bg_image_id = self.canvas.create_image(0, 0, anchor='nw')
-        self.dark_overlay_id = self.canvas.create_image(0, 0, anchor='nw')
         
-        # Criar overlay escuro uma vez
-        self.dark_overlay = Image.new("RGBA", (w, h), (0, 0, 0, 160))
-        self.dark_photo = ImageTk.PhotoImage(self.dark_overlay)
-        self.canvas.itemconfig(self.dark_overlay_id, image=self.dark_photo)
-
-        font_spec = (Config.FONT_FAMILY, Config.FONT_SIZE, 'bold')
-        padding_x = 10
-        padding_y = 10
+        if img:
+            self.photo = ImageTk.PhotoImage(img)
+            self.canvas.itemconfig(self.bg_image_id, image=self.photo)
         
-        # Textos (Sombra e Principal)
-        self.text_shadow_id = self.canvas.create_text(padding_x + 1, padding_y + 1, text="", font=font_spec, fill="black", width=w-(padding_x*2), justify='left', anchor='nw')
-        self.text_main_id = self.canvas.create_text(padding_x, padding_y, text="", font=font_spec, fill="white", width=w-(padding_x*2), justify='left', anchor='nw')
+        # Desenhar blocos de texto
+        self.draw_text_blocks(text_blocks)
 
         # Botão de fechar
         close_btn = self.canvas.create_text(w-15, 15, text="×", fill="#ff5555", font=("Arial", 16, "bold"))
@@ -133,20 +126,41 @@ class ResultWindow:
         
         self.x = 0
         self.y = 0
-        
-        # Definir conteúdo inicial
-        self.update_content(translated_text, img)
 
-    def update_content(self, translated_text, img):
-        # Atualizar imagem de fundo
+    def draw_text_blocks(self, text_blocks):
+        # Limpar desenhos anteriores de texto (se houver update)
+        self.canvas.delete("text_block")
+        
+        if not text_blocks:
+            return
+
+        for block in text_blocks:
+            bx, by, bw, bh = block['x'], block['y'], block['w'], block['h']
+            translated = block.get('translated', '')
+            
+            # Fundo do texto (para esconder o original)
+            # Cor escura para contraste
+            self.canvas.create_rectangle(bx, by, bx+bw, by+bh, fill="#2b2b2b", outline="", tags="text_block")
+            
+            # Texto
+            # Ajustar tamanho da fonte baseado na altura da linha? 
+            # Por simplicidade, vamos usar um tamanho fixo ou levemente adaptável
+            font_size = max(10, min(Config.FONT_SIZE, int(bh * 0.8)))
+            font_spec = (Config.FONT_FAMILY, font_size, 'bold')
+            
+            # Centralizar texto no bloco
+            cx = bx + bw / 2
+            cy = by + bh / 2
+            
+            self.canvas.create_text(cx, cy, text=translated, font=font_spec, fill="white", width=bw, justify='center', tags="text_block")
+
+    def update_content(self, text_blocks, img):
+        # Atualizar imagem de fundo se mudar
         if img:
-            blurred_img = img.filter(ImageFilter.GaussianBlur(radius=15))
-            self.photo = ImageTk.PhotoImage(blurred_img)
+            self.photo = ImageTk.PhotoImage(img)
             self.canvas.itemconfig(self.bg_image_id, image=self.photo)
         
-        # Atualizar texto
-        self.canvas.itemconfig(self.text_shadow_id, text=translated_text)
-        self.canvas.itemconfig(self.text_main_id, text=translated_text)
+        self.draw_text_blocks(text_blocks)
 
     def destroy(self):
         if self.on_close:
