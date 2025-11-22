@@ -51,24 +51,24 @@ class TranslatorService:
                 img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
             # Usar image_to_data para obter coordenadas de cada palavra
-            # output_type='dict' retorna um dicionário com listas
             data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
             
-            lines = {}
+            paragraphs = {}
             
-            # Agrupar palavras em linhas
+            # Agrupar palavras em PARÁGRAFOS (block_num, par_num)
+            # Isso evita que frases sejam quebradas no meio
             n_boxes = len(data['text'])
             for i in range(n_boxes):
-                if int(data['conf'][i]) > 0: # Filtrar confiança baixa/espaços vazios
+                if int(data['conf'][i]) > 0:
                     text = data['text'][i].strip()
                     if not text:
                         continue
                         
-                    # Chave única para a linha: block_page_par_line
-                    key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+                    # Chave única para o parágrafo: block_page_par
+                    key = (data['block_num'][i], data['par_num'][i])
                     
-                    if key not in lines:
-                        lines[key] = {
+                    if key not in paragraphs:
+                        paragraphs[key] = {
                             'text': [],
                             'left': data['left'][i],
                             'top': data['top'][i],
@@ -76,71 +76,61 @@ class TranslatorService:
                             'bottom': data['top'][i] + data['height'][i]
                         }
                     else:
-                        # Atualizar limites da caixa da linha
-                        l = lines[key]
-                        l['text'].append(text)
-                        l['left'] = min(l['left'], data['left'][i])
-                        l['top'] = min(l['top'], data['top'][i])
-                        l['right'] = max(l['right'], data['left'][i] + data['width'][i])
-                        l['bottom'] = max(l['bottom'], data['top'][i] + data['height'][i])
+                        # Atualizar limites da caixa do parágrafo
+                        p = paragraphs[key]
+                        p['text'].append(text)
+                        p['left'] = min(p['left'], data['left'][i])
+                        p['top'] = min(p['top'], data['top'][i])
+                        p['right'] = max(p['right'], data['left'][i] + data['width'][i])
+                        p['bottom'] = max(p['bottom'], data['top'][i] + data['height'][i])
             
-            if not lines:
+            if not paragraphs:
                 callback([], [], img)
                 return
 
             # Preparar texto para tradução em lote
-            sorted_keys = sorted(lines.keys())
+            sorted_keys = sorted(paragraphs.keys())
             text_blocks = []
             raw_texts = []
             
             for key in sorted_keys:
-                line_data = lines[key]
-                full_text = " ".join(line_data['text']) # Juntar palavras da linha
+                par_data = paragraphs[key]
+                full_text = " ".join(par_data['text'])
                 raw_texts.append(full_text)
                 
-                # Calcular largura e altura final da linha
-                w_line = line_data['right'] - line_data['left']
-                h_line = line_data['bottom'] - line_data['top']
+                w_par = par_data['right'] - par_data['left']
+                h_par = par_data['bottom'] - par_data['top']
                 
                 text_blocks.append({
                     'original': full_text,
-                    'x': line_data['left'],
-                    'y': line_data['top'],
-                    'w': w_line,
-                    'h': h_line
+                    'x': par_data['left'],
+                    'y': par_data['top'],
+                    'w': w_par,
+                    'h': h_par
                 })
 
-            # Traduzir tudo de uma vez (juntando com quebra de linha)
-            # Isso economiza chamadas de API e geralmente mantém a estrutura
+            # Traduzir tudo de uma vez
             full_payload = "\n".join(raw_texts)
             translated_payload = self.translator.translate(full_payload)
             
             if translated_payload:
                 translated_lines = translated_payload.split('\n')
                 
-                # Atribuir traduções de volta aos blocos
-                # Nota: O tradutor pode mudar o número de linhas, então precisamos ser cuidadosos.
-                # Se o número bater, ótimo. Se não, tentamos mapear ou fallback.
-                
                 if len(translated_lines) == len(text_blocks):
                     for i, block in enumerate(text_blocks):
                         block['translated'] = translated_lines[i]
                 else:
-                    # Fallback simples se as linhas não baterem (raro com Google Translate em textos curtos)
-                    # Vamos tentar distribuir ou apenas usar o texto original se der erro
-                    print("Aviso: Número de linhas traduzidas difere do original.")
-                    # Tentar mapear pelo índice até onde der
+                    print("Aviso: Número de parágrafos traduzidos difere do original.")
                     for i, block in enumerate(text_blocks):
                         if i < len(translated_lines):
                             block['translated'] = translated_lines[i]
                         else:
-                            block['translated'] = block['original'] # Fallback
+                            block['translated'] = block['original']
             else:
-                # Se falhar a tradução, usa o original
                 for block in text_blocks:
                     block['translated'] = block['original']
 
-            callback(text_blocks, None, img) # Passamos os blocos estruturados
+            callback(text_blocks, None, img)
 
         except Exception as e:
             print(f"Erro no worker: {e}")

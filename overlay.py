@@ -142,13 +142,36 @@ class ResultWindow:
             # Cor escura para contraste
             self.canvas.create_rectangle(bx, by, bx+bw, by+bh, fill="#2b2b2b", outline="", tags="text_block")
             
-            # Texto
-            # Ajustar tamanho da fonte baseado na altura da linha? 
-            # Por simplicidade, vamos usar um tamanho fixo ou levemente adaptável
-            font_size = max(10, min(Config.FONT_SIZE, int(bh * 0.8)))
+            # Texto com ajuste dinâmico de fonte e quebra de linha
+            # Começar com um tamanho razoável
+            font_size = Config.FONT_SIZE
+            min_font_size = 8
+            
+            # Loop para reduzir fonte até caber na altura
+            while font_size >= min_font_size:
+                font_spec = (Config.FONT_FAMILY, font_size, 'bold')
+                
+                # Criar texto temporário para medir
+                # width=bw faz o texto quebrar linha automaticamente
+                temp_id = self.canvas.create_text(0, 0, text=translated, font=font_spec, width=bw, anchor='nw')
+                bbox = self.canvas.bbox(temp_id)
+                self.canvas.delete(temp_id)
+                
+                if not bbox:
+                    break # Texto vazio ou erro
+                    
+                text_h = bbox[3] - bbox[1]
+                
+                # Se a altura do texto for menor ou igual à altura da caixa (com margem de erro), está bom
+                if text_h <= bh + 5: # +5 de tolerância
+                    break
+                
+                font_size -= 1
+            
+            # Desenhar texto final
             font_spec = (Config.FONT_FAMILY, font_size, 'bold')
             
-            # Centralizar texto no bloco
+            # Centralizar verticalmente e horizontalmente
             cx = bx + bw / 2
             cy = by + bh / 2
             
