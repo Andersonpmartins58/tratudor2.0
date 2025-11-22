@@ -3,15 +3,17 @@ from screeninfo import get_monitors
 from config import Config
 
 class SelectionOverlay:
-    def __init__(self, on_selection_complete):
+    def __init__(self, master, on_selection_complete):
         self.on_selection_complete = on_selection_complete
+        self.master = master
         self.root = None
         self.start_x = None
         self.start_y = None
         self.current_rect = None
 
     def show(self):
-        self.root = tk.Tk()
+        # Usar Toplevel em vez de Tk para não conflitar com a root principal
+        self.root = tk.Toplevel(self.master)
         self.root.attributes('-alpha', 0.3)  # Transparência
         self.root.attributes('-topmost', True) # Sempre no topo
         self.root.overrideredirect(True) # Sem bordas
@@ -37,7 +39,8 @@ class SelectionOverlay:
         self.canvas.bind("<ButtonRelease-1>", self.on_button_release)
         self.root.bind("<Escape>", lambda e: self.close())
         
-        self.root.mainloop()
+        # Focar na janela para capturar o ESC
+        self.root.focus_force()
 
     def close(self):
         if self.root:
@@ -73,10 +76,6 @@ class SelectionOverlay:
         width = abs(end_x - self.start_x)
         height = abs(end_y - self.start_y)
         
-        # Ajustar para coordenadas globais se necessário (depende de como o tkinter mapeia em multi-monitor)
-        # O winfo_rootx já deve compensar, mas vamos garantir que passamos coordenadas absolutas para o mss
-        # Na verdade, como a janela cobre tudo começando de min_x/min_y, precisamos somar min_x/min_y
-        
         monitors = get_monitors()
         min_global_x = min(m.x for m in monitors)
         min_global_y = min(m.y for m in monitors)
@@ -88,12 +87,12 @@ class SelectionOverlay:
             self.on_selection_complete(final_x, final_y, width, height)
 
 class ResultWindow:
-    def __init__(self, original_text, translated_text):
-        self.root = tk.Tk()
+    def __init__(self, master, original_text, translated_text):
+        self.root = tk.Toplevel(master)
         self.root.title("Tradução")
         self.root.attributes('-topmost', True)
         
-        # Posicionar perto do mouse ou no centro
+        # Posicionar perto do mouse ou no centro (simplificado para centro/padrão por enquanto)
         self.root.geometry("400x300")
         self.root.configure(bg=Config.BG_COLOR)
         
@@ -119,4 +118,4 @@ class ResultWindow:
         btn_close.pack(pady=10)
         
         self.root.bind("<Escape>", lambda e: self.root.destroy())
-        self.root.mainloop()
+

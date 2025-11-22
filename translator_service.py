@@ -12,7 +12,8 @@ if hasattr(Config, 'TESSERACT_CMD') and os.path.exists(Config.TESSERACT_CMD):
 
 class TranslatorService:
     def __init__(self):
-        self.sct = mss.mss()
+        # mss não é thread-safe se compartilhado entre threads no Windows
+        # Vamos instanciar apenas quando necessário
         self.translator = GoogleTranslator(source=Config.SOURCE_LANG, target=Config.TARGET_LANG)
 
     def capture_and_translate(self, x, y, width, height, callback):
@@ -28,11 +29,13 @@ class TranslatorService:
     def _worker(self, x, y, width, height, callback):
         try:
             # Captura de tela com mss (muito rápido)
-            monitor = {"top": y, "left": x, "width": width, "height": height}
-            sct_img = self.sct.grab(monitor)
-            
-            # Conversão para PIL Image
-            img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+            # Instanciar mss dentro da thread para evitar erro '_thread._local' object has no attribute 'srcdc'
+            with mss.mss() as sct:
+                monitor = {"top": y, "left": x, "width": width, "height": height}
+                sct_img = sct.grab(monitor)
+                
+                # Conversão para PIL Image
+                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
             # OCR
             text = pytesseract.image_to_string(img)
